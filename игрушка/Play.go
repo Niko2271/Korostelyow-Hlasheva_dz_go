@@ -608,10 +608,8 @@ func StartServer() {
 	reader := bufio.NewReader(conn)
 	writer := bufio.NewWriter(conn)
 
-	// Канал для сообщений чата
 	chatChan := make(chan string)
-	
-	// Запускаем горутину для приема сообщений чата
+
 	go func() {
 		for {
 			msg, err := reader.ReadString('\n')
@@ -620,7 +618,6 @@ func StartServer() {
 			}
 			if len(msg) >= 5 && msg[:5] == "CHAT:" {
 				fmt.Print("\n" + msg[5:])
-				// Отправляем сообщение обратно клиенту
 				writer.WriteString(msg)
 				writer.Flush()
 			}
@@ -632,13 +629,11 @@ func StartServer() {
 
 	for player1.IsAlive() && player2.IsAlive() {
 		fmt.Printf("\n=== РАУНД %d ===\n", round)
-		
-		// Показываем подсказку о чате
+
 		fmt.Println("(Для чата введите сообщение и нажмите Enter, или просто Enter чтобы пропустить)")
 		
 		fmt.Println("\n=== ВАШ ХОД (игрок 1) ===")
-		
-		// Даем возможность ввести сообщение перед ходом
+
 		fmt.Print("Сообщение (Enter чтобы пропустить): ")
 		var chatMsg string
 		fmt.Scanln(&chatMsg)
@@ -659,7 +654,6 @@ func StartServer() {
 			break
 		}
 
-		// Пропускаем сообщения чата
 		if len(data) >= 5 && data[:5] == "CHAT:" {
 			continue
 		}
@@ -730,7 +724,6 @@ func StartClient() {
 	reader := bufio.NewReader(conn)
 	writer := bufio.NewWriter(conn)
 
-	// Запускаем горутину для приема сообщений чата
 	go func() {
 		for {
 			msg, err := reader.ReadString('\n')
@@ -762,7 +755,6 @@ func StartClient() {
 			break
 		}
 
-		// Пропускаем сообщения чата
 		if len(data) >= 5 && data[:5] == "CHAT:" {
 			continue
 		}
@@ -772,7 +764,6 @@ func StartClient() {
 
 		fmt.Println("\n=== ВАШ ХОД ===")
 		
-		// Даем возможность ввести сообщение перед ходом
 		fmt.Print("Сообщение (Enter чтобы пропустить): ")
 		var chatMsg string
 		fmt.Scanln(&chatMsg)
