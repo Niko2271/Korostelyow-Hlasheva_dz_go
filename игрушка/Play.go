@@ -366,8 +366,7 @@ func manageBetweenBattles(player *Player) {
 	}
 }
 
-func main() {
-	rand.Seed(time.Now().UnixNano())
+func showPrologue() {
 	fmt.Println("══════════════════════════════════════════════════════════")
 	fmt.Println("                     ПРЕДИСЛОВИЕ")
 	fmt.Println("══════════════════════════════════════════════════════════")
@@ -384,7 +383,9 @@ func main() {
 	fmt.Println("В огне Лилиан произнесла заклинание... и превратилась в дракона.")
 	fmt.Println("Теперь вы — дракон-хранитель. Защитите Арканию!")
 	fmt.Println("══════════════════════════════════════════════════════════")
+}
 
+func playStoryMode() {
 	player := &Player{
 		Name:     "Дракон-Лилиан",
 		HP:       120,
@@ -491,62 +492,106 @@ func main() {
 		fmt.Println("\n ИГРА ОКОНЧЕНА. ВЫ ПРОИГРАЛИ.")
 	}
 	fmt.Println("══════════════════════════════════════════════════════════")
+}
 
-	fmt.Println("\n══════════════════════════════════════════════════════════")
-	fmt.Println("           ХОТИТЕ ПОПРОБОВАТЬ РЕЖИМ PvP?")
-	fmt.Println("══════════════════════════════════════════════════════════")
-	fmt.Println("1. Да")
-	fmt.Println("2. Нет (выйти из игры)")
+func playPVPMode() {
+	fmt.Println("\n════════════════════════════════════════════")
+	fmt.Println("           ВЫБЕРИТЕ РЕЖИМ PvP")
+	fmt.Println("════════════════════════════════════════════")
+	fmt.Println("1. PvP локально (на одном компьютере)")
+	fmt.Println("2. СОЗДАТЬ игру по сети (сервер)")
+	fmt.Println("3. ПРИСОЕДИНИТЬСЯ к игре по сети (клиент)")
 	fmt.Print("Выбор: ")
 
-	var wantPvP int
-	fmt.Scan(&wantPvP)
+	var mode int
+	fmt.Scan(&mode)
 
-	if wantPvP == 1 {
-		fmt.Println("\n════════════════════════════════════════════")
-		fmt.Println("           ВЫБЕРИТЕ РЕЖИМ PvP")
-		fmt.Println("════════════════════════════════════════════")
-		fmt.Println("1. PvP локально (на одном компьютере)")
-		fmt.Println("2. СОЗДАТЬ игру по сети (сервер)")
-		fmt.Println("3. ПРИСОЕДИНИТЬСЯ к игре по сети (клиент)")
+	if mode == 1 {
+		player1 := &Player{
+			Name:     "Игрок 1",
+			HP:       100,
+			MaxHP:    100,
+			Strength: 10,
+		}
+		player2 := &Player{
+			Name:     "Игрок 2",
+			HP:       100,
+			MaxHP:    100,
+			Strength: 10,
+		}
+		player1.Equipment = append(player1.Equipment, Item{
+			Name:   "Меч",
+			Type:   "оружие",
+			Attack: 5,
+		})
+		player2.Equipment = append(player2.Equipment, Item{
+			Name:   "Топор",
+			Type:   "оружие",
+			Attack: 7,
+		})
+		FightPvP([2]*Player{player1, player2})
+
+	} else if mode == 2 {
+		StartServer()
+
+	} else if mode == 3 {
+		StartClient()
+	}
+}
+
+func showMainMenu() int {
+	fmt.Println("\n══════════════════════════════════════════════════════════")
+	fmt.Println("                    ГЛАВНОЕ МЕНЮ")
+	fmt.Println("══════════════════════════════════════════════════════════")
+	fmt.Println("1. Начать сюжетную кампанию")
+	fmt.Println("2. Пропустить сюжет и начать игру")
+	fmt.Println("3. Режим PvP")
+	fmt.Println("4. Выйти из игры")
+	fmt.Println("══════════════════════════════════════════════════════════")
+	fmt.Print("Выбор: ")
+
+	var choice int
+	fmt.Scan(&choice)
+	return choice
+}
+
+func main() {
+	rand.Seed(time.Now().UnixNano())
+
+	for {
+		choice := showMainMenu()
+
+		switch choice {
+		case 1:
+			showPrologue()
+			playStoryMode()
+		case 2:
+			fmt.Println("\nПропускаем сюжет... Начинаем игру!")
+			playStoryMode()
+		case 3:
+			playPVPMode()
+		case 4:
+			fmt.Println("\nСпасибо за игру! До свидания!")
+			return
+		default:
+			fmt.Println("\nНеверный выбор. Попробуйте снова.")
+			continue
+		}
+
+		// После завершения режима спрашиваем, хотим ли вернуться в меню
+		fmt.Println("\n══════════════════════════════════════════════════════════")
+		fmt.Println("Хотите вернуться в главное меню?")
+		fmt.Println("1. Да")
+		fmt.Println("2. Нет (выйти из игры)")
 		fmt.Print("Выбор: ")
 
-		var mode int
-		fmt.Scan(&mode)
+		var backToMenu int
+		fmt.Scan(&backToMenu)
 
-		if mode == 1 {
-			player1 := &Player{
-				Name:     "Игрок 1",
-				HP:       100,
-				MaxHP:    100,
-				Strength: 10,
-			}
-			player2 := &Player{
-				Name:     "Игрок 2",
-				HP:       100,
-				MaxHP:    100,
-				Strength: 10,
-			}
-			player1.Equipment = append(player1.Equipment, Item{
-				Name:   "Меч",
-				Type:   "оружие",
-				Attack: 5,
-			})
-			player2.Equipment = append(player2.Equipment, Item{
-				Name:   "Топор",
-				Type:   "оружие",
-				Attack: 7,
-			})
-			FightPvP([2]*Player{player1, player2})
-
-		} else if mode == 2 {
-			StartServer()
-
-		} else if mode == 3 {
-			StartClient()
+		if backToMenu != 1 {
+			fmt.Println("\nСпасибо за игру! До свидания!")
+			break
 		}
-	} else {
-		fmt.Println("\nСпасибо за игру!")
 	}
 }
 
