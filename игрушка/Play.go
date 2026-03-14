@@ -608,37 +608,12 @@ func StartServer() {
 	reader := bufio.NewReader(conn)
 	writer := bufio.NewWriter(conn)
 
-	go func() {
-		for {
-			msg, err := reader.ReadString('\n')
-			if err != nil {
-				break
-			}
-			if len(msg) >= 5 && msg[:5] == "CHAT:" {
-				fmt.Print("\n" + msg[5:])
-				writer.WriteString(msg)
-				writer.Flush()
-			}
-		}
-	}()
-
 	var hit2, block2 int
 	round := 1
 
 	for player1.IsAlive() && player2.IsAlive() {
 		fmt.Printf("\n=== РАУНД %d ===\n", round)
-
-		fmt.Println("(Для чата введите сообщение и нажмите Enter, или просто Enter чтобы пропустить)")
-		
 		fmt.Println("\n=== ВАШ ХОД (игрок 1) ===")
-
-		fmt.Print("Сообщение (Enter чтобы пропустить): ")
-		var chatMsg string
-		fmt.Scanln(&chatMsg)
-		if chatMsg != "" {
-			writer.WriteString("CHAT: [" + player1.Name + "] " + chatMsg + "\n")
-			writer.Flush()
-		}
 		
 		block1 := player1.Block()
 		hit1 := player1.Hit()
@@ -650,10 +625,6 @@ func StartServer() {
 		if err != nil {
 			fmt.Println("Соединение разорвано")
 			break
-		}
-
-		if len(data) >= 5 && data[:5] == "CHAT:" {
-			continue
 		}
 
 		fmt.Sscanf(data, "%d %d", &hit2, &block2)
@@ -722,18 +693,6 @@ func StartClient() {
 	reader := bufio.NewReader(conn)
 	writer := bufio.NewWriter(conn)
 
-	go func() {
-		for {
-			msg, err := reader.ReadString('\n')
-			if err != nil {
-				break
-			}
-			if len(msg) >= 5 && msg[:5] == "CHAT:" {
-				fmt.Print("\n" + msg[5:])
-			}
-		}
-	}()
-
 	fmt.Printf("\nПодключились к серверу! Вы - %s\n", player.Name)
 	fmt.Println("Ожидаем начала игры...")
 
@@ -753,22 +712,10 @@ func StartClient() {
 			break
 		}
 
-		if len(data) >= 5 && data[:5] == "CHAT:" {
-			continue
-		}
-
 		var enemyHit, enemyBlock int
 		fmt.Sscanf(data, "%d %d", &enemyHit, &enemyBlock)
 
 		fmt.Println("\n=== ВАШ ХОД ===")
-		
-		fmt.Print("Сообщение (Enter чтобы пропустить): ")
-		var chatMsg string
-		fmt.Scanln(&chatMsg)
-		if chatMsg != "" {
-			writer.WriteString("CHAT: [" + player.Name + "] " + chatMsg + "\n")
-			writer.Flush()
-		}
 		
 		block := player.Block()
 		hit := player.Hit()
