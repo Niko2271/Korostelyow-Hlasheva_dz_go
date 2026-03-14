@@ -608,19 +608,62 @@ func StartServer() {
 	reader := bufio.NewReader(conn)
 	writer := bufio.NewWriter(conn)
 
+	// Канал для сообщений чата
+	chatChan := make(chan string)
+	
+	// Запускаем горутину для приема сообщений чата
+	go func() {
+		for {
+			msg, err := reader.ReadString('\n')
+			if err != nil {
+				break
+			}
+			if len(msg) >= 5 && msg[:5] == "CHAT:" {
+				fmt.Print("\n" + msg[5:])
+				// Отправляем сообщение обратно клиенту
+				writer.WriteString(msg)
+				writer.Flush()
+			}
+		}
+	}()
+
 	var hit2, block2 int
 	round := 1
 
 	for player1.IsAlive() && player2.IsAlive() {
 		fmt.Printf("\n=== РАУНД %d ===\n", round)
+		
+		// Показываем подсказку о чате
+		fmt.Println("(Для чата введите сообщение и нажмите Enter, или просто Enter чтобы пропустить)")
+		
 		fmt.Println("\n=== ВАШ ХОД (игрок 1) ===")
+		
+		// Даем возможность ввести сообщение перед ходом
+		fmt.Print("Сообщение (Enter чтобы пропустить): ")
+		var chatMsg string
+		fmt.Scanln(&chatMsg)
+		if chatMsg != "" {
+			writer.WriteString("CHAT: [" + player1.Name + "] " + chatMsg + "\n")
+			writer.Flush()
+		}
+		
 		block1 := player1.Block()
 		hit1 := player1.Hit()
 
 		writer.WriteString(fmt.Sprintf("%d %d\n", hit1, block1))
 		writer.Flush()
 
-		data, _ := reader.ReadString('\n')
+		data, err := reader.ReadString('\n')
+		if err != nil {
+			fmt.Println("Соединение разорвано")
+			break
+		}
+
+		// Пропускаем сообщения чата
+		if len(data) >= 5 && data[:5] == "CHAT:" {
+			continue
+		}
+
 		fmt.Sscanf(data, "%d %d", &hit2, &block2)
 
 		fmt.Println("\n--- РЕЗУЛЬТАТЫ РАУНДА ---")
@@ -673,18 +716,10 @@ func StartServer() {
 }
 
 func StartClient() {
-	fmt.Print("Введите IP сервера (Enter для localhost): ")
-	var serverIP string
-	fmt.Scanln(&serverIP)
-	
-	if serverIP == "" {
-		serverIP = "localhost"
-	}
-	
-	conn, err := net.Dial("tcp", serverIP + ":8080")
+	conn, err := net.Dial("tcp", "localhost:8080")
 	if err != nil {
 		fmt.Println("Ошибка подключения:", err)
-		fmt.Println("Убедитесь что сервер запущен и IP правильный")
+		fmt.Println("Убедитесь что сервер запущен")
 		return
 	}
 	defer conn.Close()
@@ -694,6 +729,19 @@ func StartClient() {
 
 	reader := bufio.NewReader(conn)
 	writer := bufio.NewWriter(conn)
+
+	// Запускаем горутину для приема сообщений чата
+	go func() {
+		for {
+			msg, err := reader.ReadString('\n')
+			if err != nil {
+				break
+			}
+			if len(msg) >= 5 && msg[:5] == "CHAT:" {
+				fmt.Print("\n" + msg[5:])
+			}
+		}
+	}()
 
 	fmt.Printf("\nПодключились к серверу! Вы - %s\n", player.Name)
 	fmt.Println("Ожидаем начала игры...")
@@ -714,17 +762,37 @@ func StartClient() {
 			break
 		}
 
+		// Пропускаем сообщения чата
+		if len(data) >= 5 && data[:5] == "CHAT:" {
+			continue
+		}
+
 		var enemyHit, enemyBlock int
 		fmt.Sscanf(data, "%d %d", &enemyHit, &enemyBlock)
 
 		fmt.Println("\n=== ВАШ ХОД ===")
+		
+		// Даем возможность ввести сообщение перед ходом
+		fmt.Print("Сообщение (Enter чтобы пропустить): ")
+		var chatMsg string
+		fmt.Scanln(&chatMsg)
+		if chatMsg != "" {
+			writer.WriteString("CHAT: [" + player.Name + "] " + chatMsg + "\n")
+			writer.Flush()
+		}
+		
 		block := player.Block()
 		hit := player.Hit()
 
 		writer.WriteString(fmt.Sprintf("%d %d\n", hit, block))
 		writer.Flush()
 
-		resultData, _ := reader.ReadString('\n')
+		resultData, err := reader.ReadString('\n')
+		if err != nil {
+			fmt.Println("Соединение разорвано")
+			break
+		}
+
 		var playerHP, enemyHP, enemyHit2, enemyBlock2, damageToEnemy, damageToPlayer int
 		fmt.Sscanf(resultData, "%d %d %d %d %d %d", 
 			&playerHP, &enemyHP, &enemyHit2, &enemyBlock2, &damageToEnemy, &damageToPlayer)
