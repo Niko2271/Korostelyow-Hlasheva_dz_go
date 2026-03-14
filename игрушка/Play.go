@@ -261,7 +261,7 @@ func FightPvP(players [2]*Player) {
 	fmt.Println("\n════════════════════════════════════════════")
 	fmt.Println("           РЕЖИМ PvP - ГОРЯЧИЙ СТУЛ")
 	fmt.Println("════════════════════════════════════════════")
-	fmt.Println("📜 ПРАВИЛА:")
+	fmt.Println("ПРАВИЛА:")
 	fmt.Println("1. Когда ходит соперник - ОТВЕРНИТЕСЬ!")
 	fmt.Println("2. Вводите выбор, когда подойдёт очередь")
 	fmt.Println("3. Не подсматривайте!")
@@ -601,6 +601,7 @@ func StartServer() {
 
 	conn, _ := ln.Accept()
 	defer conn.Close()
+	
 	player1 := &Player{Name: "Игрок 1 (хост)", HP: 100, MaxHP: 100, Strength: 10}
 	player2 := &Player{Name: "Игрок 2", HP: 100, MaxHP: 100, Strength: 10}
 
@@ -608,8 +609,10 @@ func StartServer() {
 	writer := bufio.NewWriter(conn)
 
 	var hit2, block2 int
+	round := 1
 
 	for player1.IsAlive() && player2.IsAlive() {
+		fmt.Printf("\n=== РАУНД %d ===\n", round)
 		fmt.Println("\n=== ВАШ ХОД (игрок 1) ===")
 		block1 := player1.Block()
 		hit1 := player1.Hit()
@@ -621,47 +624,130 @@ func StartServer() {
 		fmt.Sscanf(data, "%d %d", &hit2, &block2)
 
 		fmt.Println("\n--- РЕЗУЛЬТАТЫ РАУНДА ---")
+		fmt.Printf("%s защищает %d, бьёт в %d\n", player1.Name, block1, hit1)
+		fmt.Printf("%s защищает %d, бьёт в %d\n", player2.Name, block2, hit2)
 
+		damage1 := 0
+		damage2 := 0
+		
 		if hit1 != block2 {
-			damage := player1.GetStrength()
-			player2.TakeDamage(damage)
-			fmt.Printf("%s попадает! Урон: %d\n", player1.Name, damage)
+			damage1 = player1.GetStrength()
+			player2.TakeDamage(damage1)
+			fmt.Printf("%s попадает! Урон: %d\n", player1.Name, damage1)
 		} else {
-			fmt.Printf("%s блокирует!\n", player2.Name)
+			fmt.Printf("%s блокирует удар %s!\n", player2.Name, player1.Name)
 		}
 
 		if hit2 != block1 {
-			damage := player2.GetStrength()
-			player1.TakeDamage(damage)
-			fmt.Printf("%s попадает! Урон: %d\n", player2.Name, damage)
+			damage2 = player2.GetStrength()
+			player1.TakeDamage(damage2)
+			fmt.Printf("%s попадает! Урон: %d\n", player2.Name, damage2)
 		} else {
-			fmt.Printf("%s блокирует!\n", player1.Name)
+			fmt.Printf("%s блокирует удар %s!\n", player1.Name, player2.Name)
 		}
-		fmt.Printf("%s: %d/%d HP\n", player1.Name, player1.HP, player1.MaxHP)
+
+		resultMsg := fmt.Sprintf("%d %d %d %d %d %d\n", 
+			player1.HP, player2.HP, hit1, block1, damage1, damage2)
+		writer.WriteString(resultMsg)
+		writer.Flush()
+
+		fmt.Printf("\n%s: %d/%d HP\n", player1.Name, player1.HP, player1.MaxHP)
 		fmt.Printf("%s: %d/%d HP\n", player2.Name, player2.HP, player2.MaxHP)
+		
+		round++
 	}
+
+	var winner string
+	if player1.IsAlive() {
+		winner = player1.Name
+	} else {
+		winner = player2.Name
+	}
+	
+	fmt.Println("\n════════════════════════════════════════════")
+	fmt.Printf("ПОБЕДИТЕЛЬ: %s!\n", winner)
+	fmt.Println("════════════════════════════════════════════")
+	
+	writer.WriteString("GAME_OVER " + winner + "\n")
+	writer.Flush()
 }
 
 func StartClient() {
-	conn, _ := net.Dial("tcp", "localhost:8080")
+	fmt.Print("Введите IP сервера (Enter для localhost): ")
+	var serverIP string
+	fmt.Scanln(&serverIP)
+	
+	if serverIP == "" {
+		serverIP = "localhost"
+	}
+	
+	conn, err := net.Dial("tcp", serverIP + ":8080")
+	if err != nil {
+		fmt.Println("Ошибка подключения:", err)
+		fmt.Println("Убедитесь что сервер запущен и IP правильный")
+		return
+	}
 	defer conn.Close()
 
 	player := &Player{Name: "Игрок 2", HP: 100, MaxHP: 100, Strength: 10}
+	enemyName := "Игрок 1 (хост)"
 
 	reader := bufio.NewReader(conn)
 	writer := bufio.NewWriter(conn)
 
+	fmt.Printf("\nПодключились к серверу! Вы - %s\n", player.Name)
+	fmt.Println("Ожидаем начала игры...")
+
 	for player.IsAlive() {
-		data, _ := reader.ReadString('\n')
+		data, err := reader.ReadString('\n')
+		if err != nil {
+			fmt.Println("Соединение разорвано")
+			break
+		}
+
+		if len(data) >= 9 && data[:9] == "GAME_OVER" {
+			var winner string
+			fmt.Sscanf(data, "GAME_OVER %s", &winner)
+			fmt.Println("\n════════════════════════════════════════════")
+			fmt.Printf("ПОБЕДИТЕЛЬ: %s!\n", winner)
+			fmt.Println("════════════════════════════════════════════")
+			break
+		}
+
 		var enemyHit, enemyBlock int
 		fmt.Sscanf(data, "%d %d", &enemyHit, &enemyBlock)
 
-		fmt.Println("\n=== ВАШ ХОД (игрок 2) ===")
+		fmt.Println("\n=== ВАШ ХОД ===")
 		block := player.Block()
 		hit := player.Hit()
 
 		writer.WriteString(fmt.Sprintf("%d %d\n", hit, block))
 		writer.Flush()
 
+		resultData, _ := reader.ReadString('\n')
+		var playerHP, enemyHP, enemyHit2, enemyBlock2, damageToEnemy, damageToPlayer int
+		fmt.Sscanf(resultData, "%d %d %d %d %d %d", 
+			&playerHP, &enemyHP, &enemyHit2, &enemyBlock2, &damageToEnemy, &damageToPlayer)
+
+		player.HP = playerHP
+
+		fmt.Println("\n--- РЕЗУЛЬТАТЫ РАУНДА ---")
+		fmt.Printf("%s защищает %d, бьёт в %d\n", enemyName, enemyBlock, enemyHit)
+		fmt.Printf("%s защищает %d, бьёт в %d\n", player.Name, block, hit)
+
+		if damageToEnemy > 0 {
+			fmt.Printf("%s попадает! Урон: %d\n", player.Name, damageToEnemy)
+		} else {
+			fmt.Printf("%s блокирует удар %s!\n", enemyName, player.Name)
+		}
+
+		if damageToPlayer > 0 {
+			fmt.Printf("%s попадает! Урон: %d\n", enemyName, damageToPlayer)
+		} else {
+			fmt.Printf("%s блокирует удар %s!\n", player.Name, enemyName)
+		}
+
+		fmt.Printf("\n%s: %d/%d HP\n", player.Name, player.HP, player.MaxHP)
+		fmt.Printf("%s: %d HP\n", enemyName, enemyHP)
 	}
 }
