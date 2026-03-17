@@ -11,24 +11,18 @@ import (
 )
 
 func main() {
-	// Определяем флаг для хоста
 	host := flag.String("host", "google.com", "хост для проверки")
 	flag.Parse()
 
 	fmt.Printf("Проверяем хост: %s\n", *host)
 
-	// Канал для сигналов
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
-	// Канал для результата
 	resultChan := make(chan string)
 
-	// Запускаем пинг в отдельной горутине
 	go func() {
 		start := time.Now()
-		
-		// Пробуем подключиться к порту 80
 		conn, err := net.DialTimeout("tcp", *host+":80", 2*time.Second)
 		
 		if err != nil {
@@ -40,8 +34,6 @@ func main() {
 		latency := time.Since(start)
 		resultChan <- fmt.Sprintf("%s | OK | %v", *host, latency)
 	}()
-
-	// Ждём либо результат, либо сигнал
 	select {
 	case res := <-resultChan:
 		fmt.Println(res)
