@@ -14,92 +14,93 @@ import (
 	"time"
 )
 
+// ANSI color codes
+const (
+	reset   = "\033[0m"
+	red     = "\033[31m"
+	green   = "\033[32m"
+	yellow  = "\033[33m"
+	blue    = "\033[34m"
+	magenta = "\033[35m"
+	cyan    = "\033[36m"
+	white   = "\033[37m"
+	bold    = "\033[1m"
+)
+
+// Типы статусов
+const (
+	StatusOK       = "✓ OK"
+	StatusTimeout  = "⏰ TIMEOUT"
+	StatusRefused  = "🔌 REFUSED"
+	StatusNoRoute  = "🚫 NO ROUTE"
+	StatusDNSFail  = "🌐 DNS FAIL"
+	StatusNetwork  = "📡 NET ERR"
+	StatusUnknown  = "❓ UNKNOWN"
+	StatusChecking = "⏳ CHECKING"
+	StatusSlow     = "⚠️  SLOW"
+	StatusFast     = "⚡ FAST"
+)
+
 type PingResult struct {
-	Host    string
-	Success bool
-	Latency time.Duration
-	Error   error
-	Time    time.Time
+	Host      string
+	Success   bool
+	Latency   time.Duration
+	Attempt   int
+	Total     int
+	Time      time.Time
+	Status    string
+	ErrorType string
 }
 
 func main() {
-	monitorMode := flag.Bool("monitor", false, "режим мониторинга (постоянная проверка)")
-	interval := flag.Int("interval", 5, "интервал проверки в секундах (для режима мониторинга)")
-	file := flag.String("file", "hosts.txt", "файл со списком хостов")
-	output := flag.String("output", "results.txt", "файл для записи результатов")
+	fileFlag := flag.String("f", "", "файл со списком хостов")
+	countFlag := flag.Int("c", 0, "количество повторов (для разового режима)")
+	monitorFlag := flag.Bool("monitor", false, "режим постоянного мониторинга")
 	flag.Parse()
 
-	fmt.Println("=== Программа для пинга хостов ===")
-	fmt.Printf("Режим мониторинга: %v\n", *monitorMode)
-	fmt.Printf("Интервал: %d сек\n", *interval)
-	fmt.Printf("Файл с хостами: %s\n", *file)
-	fmt.Printf("Файл результатов: %s\n", *output)
+	printBanner()
 
-	hosts, err := readHostsFromFile(*file)
+	if *fileFlag == "" {
+		fmt.Printf("%sОшибка:%s укажите файл с хостами через -f\n", red, reset)
+		fmt.Printf("%sПример:%s go run main.go -f hosts.txt -c 3\n", yellow, reset)
+		fmt.Printf("%sПример:%s go run main.go -f hosts.txt -monitor\n", yellow, reset)
+		return
+	}
+
+	hosts, err := readHostsFromFile(*fileFlag)
 	if err != nil {
-		fmt.Printf("Ошибка чтения файла с хостами: %v\n", err)
-		fmt.Println("Использую тестовые хосты: google.com, github.com, ya.ru")
-		hosts = []string{"google.com", "github.com", "ya.ru"}
+		fmt.Printf("%sОшибка чтения файла: %v%s\n", red, err, reset)
+		return
 	}
 
-	fmt.Printf("Загружено хостов: %d\n", len(hosts))
-	for i, h := range hosts {
-		fmt.Printf("  %d. %s\n", i+1, h)
+	if len(hosts) == 0 {
+		fmt.Printf("%sФайл с хостами пуст%s\n", red, reset)
+		return
 	}
 
-	resultChan := make(chan PingResult, 100) 
-	doneChan := make(chan bool)               
+	printHostsList(hosts)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-	go fileWriter(*output, resultChan, doneChan)
-
-	go consolePrinter(resultChan)
-
-	if *monitorMode {
-		fmt.Println("\nЗапущен режим мониторинга. Нажмите Ctrl+C для остановки.")
-		
-		var wg sync.WaitGroup
-		
-		for _, host := range hosts {
-			wg.Add(1)
-			go monitorHost(ctx, &wg, host, time.Duration(*interval)*time.Second, resultChan)
-		}
-		
-		<-sigChan
-		fmt.Println("\nПолучен сигнал завершения. Завершаем работу...")
-		
-		cancel()
-		
-		wg.Wait()
-		
+	if *monitorFlag {
+		startMonitorMode(hosts)
+	} else if *countFlag > 0 {
+		startSingleMode(hosts, *countFlag)
 	} else {
-		fmt.Println("\nЗапущена однократная проверка хостов...")
-		
-		for _, host := range hosts {
-			go pingHost(host, resultChan)
-		}
-		
-		done := make(chan bool)
-		go func() {
-			time.Sleep(time.Duration(len(hosts)) * 3 * time.Second) // примерно ждём все проверки
-			done <- true
-		}()
-		
-		select {
-		case <-done:
-			fmt.Println("Все проверки завершены.")
-		case <-sigChan:
-			fmt.Println("\nПолучен сигнал завершения. Прерываем проверки...")
-		}
+		fmt.Printf("%sОшибка:%s укажите либо -c N (разовая проверка), либо -monitor (постоянный мониторинг)\n", red, reset)
 	}
+}
 
-	close(resultChan)
-	<-doneChan
-	
-	fmt.Println("Программа завершена.")
+func printBanner() {
+	fmt.Printf("%s╔════════════════════════════════════════════════════════╗%s\n", cyan, reset)
+	fmt.Printf("%s║            PINGER v2.0 - Мониторинг хостов            ║%s\n", cyan, reset)
+	fmt.Printf("%s╚════════════════════════════════════════════════════════╝%s\n\n", cyan, reset)
+}
+
+func printHostsList(hosts []string) {
+	fmt.Printf("%s📋 Загруженные хосты:%s\n", bold, reset)
+	for i, host := range hosts {
+		fmt.Printf("   %d. %s%s%s\n", i+1, cyan, host, reset)
+	}
+	fmt.Println()
 }
 
 func readHostsFromFile(filename string) ([]string, error) {
@@ -117,101 +118,345 @@ func readHostsFromFile(filename string) ([]string, error) {
 			hosts = append(hosts, host)
 		}
 	}
-
-	if err := scanner.Err(); err != nil {
-		return nil, err
-	}
-
-	return hosts, nil
+	return hosts, scanner.Err()
 }
-func pingHost(host string, resultChan chan<- PingResult) {
-	start := time.Now()
-	
-	conn, err := net.DialTimeout("tcp", host+":80", 2*time.Second)
-	
-	result := PingResult{
-		Host:    host,
-		Time:    start,
-		Success: false,
+
+// РЕЖИМ РАЗОВОЙ ПРОВЕРКИ
+func startSingleMode(hosts []string, attempts int) {
+	fmt.Printf("%s🔍 РЕЖИМ РАЗОВОЙ ПРОВЕРКИ%s\n", bold+green, reset)
+	fmt.Printf("%sКоличество проверок на хост: %d%s\n\n", yellow, attempts, reset)
+
+	// Заголовок таблицы
+	printTableHeader()
+
+	for _, host := range hosts {
+		for attempt := 1; attempt <= attempts; attempt++ {
+			status, latency := pingHostWithStatus(host)
+
+			printResultRow(host, status, latency, attempt, attempts)
+
+			if attempt < attempts {
+				time.Sleep(1 * time.Second)
+			}
+		}
+		// Разделитель между хостами
+		if len(hosts) > 1 {
+			fmt.Printf("%s├%s\n", strings.Repeat("─", 68), reset)
+		}
 	}
 	
+	printTableFooter()
+	printSummary(hosts, attempts)
+}
+
+// РЕЖИМ ПОСТОЯННОГО МОНИТОРИНГА
+func startMonitorMode(hosts []string) {
+	fmt.Printf("%s🔄 РЕЖИМ ПОСТОЯННОГО МОНИТОРИНГА%s\n", bold+magenta, reset)
+	fmt.Printf("%sИнтервал проверки: 5 секунд%s\n", yellow, reset)
+	fmt.Printf("%sДля остановки нажмите Ctrl+C%s\n\n", yellow, reset)
+
+	resultChan := make(chan PingResult)
+	
+	// Создаем файл для лога
+	logFile, err := os.Create("monitor.log")
 	if err != nil {
-		result.Error = err
-		result.Latency = 0
-	} else {
-		conn.Close()
-		result.Success = true
-		result.Latency = time.Since(start)
+		fmt.Printf("%sОшибка создания лог-файла: %v%s\n", red, err, reset)
+		return
 	}
-	resultChan <- result
+	defer logFile.Close()
+
+	// Записываем заголовок в лог
+	logFile.WriteString("Время | Хост | Статус | Время ответа | Тип ошибки\n")
+
+	// Канал для сигналов ОС
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+
+	// WaitGroup для горутин
+	var wg sync.WaitGroup
+	
+	// Контекст для отмены
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Запускаем по горутине на каждый хост
+	for _, host := range hosts {
+		wg.Add(1)
+		go monitorWorker(ctx, &wg, host, resultChan)
+	}
+
+	// Горутина для вывода результатов и записи в лог
+	go func() {
+		lastResults := make(map[string]PingResult)
+		
+		for result := range resultChan {
+			lastResults[result.Host] = result
+			printMonitorResults(lastResults, hosts)
+			
+			// Записываем в лог-файл
+			logLine := formatLogLine(result)
+			logFile.WriteString(logLine)
+		}
+	}()
+
+	fmt.Printf("%sМониторинг запущен. Ожидание результатов...%s\n\n", green, reset)
+	
+	// Ждем сигнал Ctrl+C
+	<-sigChan
+	fmt.Printf("\n%s⏹ Получен сигнал завершения. Завершаем работу...%s\n", yellow, reset)
+	
+	// Отменяем контекст
+	cancel()
+	
+	// Ждем завершения всех горутин
+	wg.Wait()
+	
+	// Закрываем канал
+	close(resultChan)
+	
+	// Даем время на запись последних результатов
+	time.Sleep(100 * time.Millisecond)
+	
+	fmt.Printf("%s✅ Программа завершена. Лог сохранен в monitor.log%s\n", green, reset)
 }
 
-func monitorHost(ctx context.Context, wg *sync.WaitGroup, host string, interval time.Duration, resultChan chan<- PingResult) {
+func printMonitorResults(results map[string]PingResult, hosts []string) {
+	// Очищаем экран (работает в большинстве терминалов)
+	fmt.Print("\033[H\033[2J")
+	
+	// Заголовок
+	fmt.Printf("%s╔══════════════════════════════════════════════════════════════════╗%s\n", cyan, reset)
+	fmt.Printf("%s║              МОНИТОРИНГ ХОСТОВ (в реальном времени)              ║%s\n", cyan, reset)
+	fmt.Printf("%s╚══════════════════════════════════════════════════════════════════╝%s\n\n", cyan, reset)
+	
+	// Время последнего обновления
+	fmt.Printf("%s🕐 Последнее обновление: %s%s\n\n", bold, time.Now().Format("15:04:05"), reset)
+	
+	// Легенда статусов
+	printStatusLegend()
+	
+	// Таблица результатов
+	fmt.Printf("%s┌─────────────────┬─────────────┬─────────────┬─────────────────┐%s\n", blue, reset)
+	fmt.Printf("%s│ %-15s │ %-11s │ %-11s │ %-15s │%s\n", blue, "ХОСТ", "СТАТУС", "ЗАДЕРЖКА", "ВРЕМЯ", reset)
+	fmt.Printf("%s├─────────────────┼─────────────┼─────────────┼─────────────────┤%s\n", blue, reset)
+	
+	for _, host := range hosts {
+		if result, ok := results[host]; ok {
+			statusColor := getStatusColor(result.Status)
+			
+			fmt.Printf("│ %-15s │ %s%-11s%s │ %-11s │ %-15s │\n",
+				host,
+				statusColor, result.Status, reset,
+				formatLatency(result.Latency),
+				result.Time.Format("15:04:05"))
+		} else {
+			fmt.Printf("│ %-15s │ %s%-11s%s │ %-11s │ %-15s │\n",
+				host,
+				yellow, StatusChecking, reset,
+				"---",
+				"---")
+		}
+	}
+	
+	fmt.Printf("%s└─────────────────┴─────────────┴─────────────┴─────────────────┘%s\n", blue, reset)
+	
+	// Статистика
+	printStatistics(results, hosts)
+	
+	// Инструкция
+	fmt.Printf("\n%s⏹ Для остановки нажмите Ctrl+C%s\n", yellow, reset)
+}
+
+func printStatusLegend() {
+	fmt.Printf("%sЛегенда статусов:%s\n", bold, reset)
+	fmt.Printf("%s  ✓ OK        %s- успешно     %s", green, reset, reset)
+	fmt.Printf("%s⚡ FAST      %s- быстро (<50ms)%s\n", green, reset, reset)
+	fmt.Printf("%s  ⚠️  SLOW     %s- медленно     %s", yellow, reset, reset)
+	fmt.Printf("%s⏰ TIMEOUT   %s- таймаут%s\n", red, reset, reset)
+	fmt.Printf("%s  🔌 REFUSED   %s- отказ        %s", red, reset, reset)
+	fmt.Printf("%s🚫 NO ROUTE  %s- нет маршрута%s\n", red, reset, reset)
+	fmt.Printf("%s  🌐 DNS FAIL  %s- DNS ошибка   %s", red, reset, reset)
+	fmt.Printf("%s📡 NET ERR   %s- сеть недоступна%s\n\n", red, reset, reset)
+}
+
+func printStatistics(results map[string]PingResult, hosts []string) {
+	stats := make(map[string]int)
+	for _, result := range results {
+		stats[result.Status]++
+	}
+	
+	fmt.Printf("\n%s📊 Статистика:%s\n", bold, reset)
+	fmt.Printf("   ✅ Успешных: %s%d%s ", green, stats[StatusOK]+stats[StatusFast]+stats[StatusSlow], reset)
+	fmt.Printf("(⚡%d быстрых, ⚠️%d медленных)\n", stats[StatusFast], stats[StatusSlow])
+	fmt.Printf("   ❌ Провальных: %s%d%s\n", red, len(results)-stats[StatusOK]-stats[StatusFast]-stats[StatusSlow], reset)
+	
+	if stats[StatusTimeout] > 0 {
+		fmt.Printf("      ⏰ Таймаут: %d\n", stats[StatusTimeout])
+	}
+	if stats[StatusRefused] > 0 {
+		fmt.Printf("      🔌 Отказ в соединении: %d\n", stats[StatusRefused])
+	}
+	if stats[StatusNoRoute] > 0 {
+		fmt.Printf("      🚫 Нет маршрута: %d\n", stats[StatusNoRoute])
+	}
+	if stats[StatusDNSFail] > 0 {
+		fmt.Printf("      🌐 DNS ошибка: %d\n", stats[StatusDNSFail])
+	}
+	if stats[StatusNetwork] > 0 {
+		fmt.Printf("      📡 Сетевая ошибка: %d\n", stats[StatusNetwork])
+	}
+	if stats[StatusUnknown] > 0 {
+		fmt.Printf("      ❓ Неизвестная ошибка: %d\n", stats[StatusUnknown])
+	}
+	
+	fmt.Printf("   📈 Всего хостов: %d\n", len(hosts))
+}
+
+func monitorWorker(ctx context.Context, wg *sync.WaitGroup, host string, resultChan chan<- PingResult) {
 	defer wg.Done()
 	
-	ticker := time.NewTicker(interval)
+	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 	
-	fmt.Printf("Запущен мониторинг для %s (интервал %v)\n", host, interval)
+	doPingWithStatus(host, resultChan)
 	
 	for {
 		select {
 		case <-ctx.Done():
-			fmt.Printf("Завершаем мониторинг для %s\n", host)
 			return
 		case <-ticker.C:
-			pingHost(host, resultChan)
+			doPingWithStatus(host, resultChan)
 		}
 	}
-
-func fileWriter(filename string, resultChan <-chan PingResult, doneChan chan<- bool) {
-	file, err := os.Create(filename)
-	if err != nil {
-		fmt.Printf("Ошибка создания файла: %v\n", err)
-		doneChan <- true
-		return
-	}
-	defer file.Close()
-	
-	// Пишем заголовок
-	file.WriteString("Время;Хост;Статус;Задержка;Ошибка\n")
-	
-	for result := range resultChan {
-		status := "OK"
-		if !result.Success {
-			status = "FAIL"
-		}
-		
-		line := fmt.Sprintf("%s;%s;%s;%v;%v\n",
-			result.Time.Format("15:04:05"),
-			result.Host,
-			status,
-			result.Latency,
-			result.Error)
-		
-		_, err := file.WriteString(line)
-		if err != nil {
-			fmt.Printf("Ошибка записи в файл: %v\n", err)
-		}
-	}
-	
-	fmt.Println("Запись в файл завершена.")
-	doneChan <- true
 }
 
-func consolePrinter(resultChan <-chan PingResult) {
-	for result := range resultChan {
-		if result.Success {
-			fmt.Printf("%s | %s | OK | %v\n",
-				result.Time.Format("15:04:05"),
-				result.Host,
-				result.Latency)
+func doPingWithStatus(host string, resultChan chan<- PingResult) {
+	status, latency := pingHostWithStatus(host)
+	result := PingResult{
+		Host:    host,
+		Success: status == StatusOK || status == StatusFast || status == StatusSlow,
+		Latency: latency,
+		Time:    time.Now(),
+		Status:  status,
+	}
+	resultChan <- result
+}
+
+func pingHostWithStatus(host string) (string, time.Duration) {
+	// Проверяем DNS сначала
+	addrs, err := net.LookupHost(host)
+	if err != nil {
+		return StatusDNSFail, 0
+	}
+	
+	if len(addrs) == 0 {
+		return StatusDNSFail, 0
+	}
+
+	// Добавляем порт 80, если его нет
+	targetHost := host
+	if !strings.Contains(host, ":") {
+		targetHost = host + ":80"
+	}
+
+	start := time.Now()
+	conn, err := net.DialTimeout("tcp", targetHost, 2*time.Second)
+
+	if err != nil {
+		// Анализируем тип ошибки
+		if strings.Contains(err.Error(), "timeout") {
+			return StatusTimeout, 0
+		} else if strings.Contains(err.Error(), "refused") {
+			return StatusRefused, 0
+		} else if strings.Contains(err.Error(), "no route") {
+			return StatusNoRoute, 0
+		} else if strings.Contains(err.Error(), "network is unreachable") {
+			return StatusNetwork, 0
 		} else {
-			fmt.Printf("%s | %s | ERROR | %v\n",
-				result.Time.Format("15:04:05"),
-				result.Host,
-				result.Error)
+			return StatusUnknown, 0
 		}
 	}
-	fmt.Println("Вывод в консоль завершён.")
+
+	conn.Close()
+	latency := time.Since(start)
+	
+	// Определяем статус на основе задержки
+	if latency < 50*time.Millisecond {
+		return StatusFast, latency
+	} else if latency > 500*time.Millisecond {
+		return StatusSlow, latency
+	}
+	return StatusOK, latency
+}
+
+func printTableHeader() {
+	fmt.Printf("%s┌─────────────────┬─────────────┬─────────────┬─────────────┐%s\n", blue, reset)
+	fmt.Printf("%s│ %-15s │ %-11s │ %-11s │ %-11s │%s\n", blue, "ХОСТ", "СТАТУС", "ЗАДЕРЖКА", "ПОПЫТКА", reset)
+	fmt.Printf("%s├─────────────────┼─────────────┼─────────────┼─────────────┤%s\n", blue, reset)
+}
+
+func printResultRow(host, status string, latency time.Duration, attempt, total int) {
+	statusColor := getStatusColor(status)
+	
+	fmt.Printf("│ %-15s │ %s%-11s%s │ %-11s │ %d/%-7d │\n",
+		host,
+		statusColor, status, reset,
+		formatLatency(latency),
+		attempt, total)
+}
+
+func printTableFooter() {
+	fmt.Printf("%s└─────────────────┴─────────────┴─────────────┴─────────────┘%s\n", blue, reset)
+}
+
+func printSummary(hosts []string, attempts int) {
+	fmt.Printf("\n%s📊 ИТОГОВАЯ СТАТИСТИКА%s\n", bold, reset)
+	fmt.Printf("   Проверено хостов: %d\n", len(hosts))
+	fmt.Printf("   Проверок на хост: %d\n", attempts)
+	fmt.Printf("   Всего проверок: %d\n", len(hosts)*attempts)
+	fmt.Printf("%s✅ Проверка завершена%s\n", green, reset)
+}
+
+func getStatusColor(status string) string {
+	switch status {
+	case StatusFast:
+		return green + bold
+	case StatusOK:
+		return green
+	case StatusSlow:
+		return yellow
+	case StatusTimeout, StatusRefused, StatusNoRoute, StatusDNSFail, StatusNetwork, StatusUnknown:
+		return red
+	case StatusChecking:
+		return yellow
+	default:
+		return reset
+	}
+}
+
+func formatLatency(d time.Duration) string {
+	if d == 0 {
+		return "---"
+	}
+	if d < time.Millisecond {
+		return fmt.Sprintf("%dµs", d.Microseconds())
+	}
+	if d < time.Second {
+		return fmt.Sprintf("%dms", d.Milliseconds())
+	}
+	return d.String()
+}
+
+func formatLogLine(result PingResult) string {
+	latencyStr := result.Latency.String()
+	if result.Latency == 0 {
+		latencyStr = "0s"
+	}
+	
+	return fmt.Sprintf("%s | %s | %s | %s | %s\n",
+		result.Time.Format("2006-01-02 15:04:05"),
+		result.Host,
+		result.Status,
+		latencyStr,
+		result.ErrorType)
 }
