@@ -1,45 +1,217 @@
 package main
 
 import (
+	"bufio"
+	"context"
 	"flag"
 	"fmt"
 	"net"
 	"os"
 	"os/signal"
+	"strings"
+	"sync"
 	"syscall"
 	"time"
 )
 
+type PingResult struct {
+	Host    string
+	Success bool
+	Latency time.Duration
+	Error   error
+	Time    time.Time
+}
+
 func main() {
-	host := flag.String("host", "google.com", "хост для проверки")
+	monitorMode := flag.Bool("monitor", false, "режим мониторинга (постоянная проверка)")
+	interval := flag.Int("interval", 5, "интервал проверки в секундах (для режима мониторинга)")
+	file := flag.String("file", "hosts.txt", "файл со списком хостов")
+	output := flag.String("output", "results.txt", "файл для записи результатов")
 	flag.Parse()
 
-	fmt.Printf("Проверяем хост: %s\n", *host)
+	fmt.Println("=== Программа для пинга хостов ===")
+	fmt.Printf("Режим мониторинга: %v\n", *monitorMode)
+	fmt.Printf("Интервал: %d сек\n", *interval)
+	fmt.Printf("Файл с хостами: %s\n", *file)
+	fmt.Printf("Файл результатов: %s\n", *output)
 
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-
-	resultChan := make(chan string)
-
-	go func() {
-		start := time.Now()
-		conn, err := net.DialTimeout("tcp", *host+":80", 2*time.Second)
-		
-		if err != nil {
-			resultChan <- fmt.Sprintf("%s | ОШИБКА: %v", *host, err)
-			return
-		}
-		defer conn.Close()
-		
-		latency := time.Since(start)
-		resultChan <- fmt.Sprintf("%s | OK | %v", *host, latency)
-	}()
-	select {
-	case res := <-resultChan:
-		fmt.Println(res)
-	case <-sigChan:
-		fmt.Println("\nПолучен сигнал завершения. Выходим.")
+	hosts, err := readHostsFromFile(*file)
+	if err != nil {
+		fmt.Printf("Ошибка чтения файла с хостами: %v\n", err)
+		fmt.Println("Использую тестовые хосты: google.com, github.com, ya.ru")
+		hosts = []string{"google.com", "github.com", "ya.ru"}
 	}
 
+	fmt.Printf("Загружено хостов: %d\n", len(hosts))
+	for i, h := range hosts {
+		fmt.Printf("  %d. %s\n", i+1, h)
+	}
+
+	resultChan := make(chan PingResult, 100) 
+	doneChan := make(chan bool)               
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	go fileWriter(*output, resultChan, doneChan)
+
+	go consolePrinter(resultChan)
+
+	if *monitorMode {
+		fmt.Println("\nЗапущен режим мониторинга. Нажмите Ctrl+C для остановки.")
+		
+		var wg sync.WaitGroup
+		
+		for _, host := range hosts {
+			wg.Add(1)
+			go monitorHost(ctx, &wg, host, time.Duration(*interval)*time.Second, resultChan)
+		}
+		
+		<-sigChan
+		fmt.Println("\nПолучен сигнал завершения. Завершаем работу...")
+		
+		cancel()
+		
+		wg.Wait()
+		
+	} else {
+		fmt.Println("\nЗапущена однократная проверка хостов...")
+		
+		for _, host := range hosts {
+			go pingHost(host, resultChan)
+		}
+		
+		done := make(chan bool)
+		go func() {
+			time.Sleep(time.Duration(len(hosts)) * 3 * time.Second) // примерно ждём все проверки
+			done <- true
+		}()
+		
+		select {
+		case <-done:
+			fmt.Println("Все проверки завершены.")
+		case <-sigChan:
+			fmt.Println("\nПолучен сигнал завершения. Прерываем проверки...")
+		}
+	}
+
+	close(resultChan)
+	<-doneChan
+	
 	fmt.Println("Программа завершена.")
+}
+
+func readHostsFromFile(filename string) ([]string, error) {
+	file, err := os.Open(filename)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	var hosts []string
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		host := strings.TrimSpace(scanner.Text())
+		if host != "" && !strings.HasPrefix(host, "#") {
+			hosts = append(hosts, host)
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+
+	return hosts, nil
+}
+func pingHost(host string, resultChan chan<- PingResult) {
+	start := time.Now()
+	
+	conn, err := net.DialTimeout("tcp", host+":80", 2*time.Second)
+	
+	result := PingResult{
+		Host:    host,
+		Time:    start,
+		Success: false,
+	}
+	
+	if err != nil {
+		result.Error = err
+		result.Latency = 0
+	} else {
+		conn.Close()
+		result.Success = true
+		result.Latency = time.Since(start)
+	}
+	resultChan <- result
+}
+
+func monitorHost(ctx context.Context, wg *sync.WaitGroup, host string, interval time.Duration, resultChan chan<- PingResult) {
+	defer wg.Done()
+	
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	
+	fmt.Printf("Запущен мониторинг для %s (интервал %v)\n", host, interval)
+	
+	for {
+		select {
+		case <-ctx.Done():
+			fmt.Printf("Завершаем мониторинг для %s\n", host)
+			return
+		case <-ticker.C:
+			pingHost(host, resultChan)
+		}
+	}
+
+func fileWriter(filename string, resultChan <-chan PingResult, doneChan chan<- bool) {
+	file, err := os.Create(filename)
+	if err != nil {
+		fmt.Printf("Ошибка создания файла: %v\n", err)
+		doneChan <- true
+		return
+	}
+	defer file.Close()
+	
+	// Пишем заголовок
+	file.WriteString("Время;Хост;Статус;Задержка;Ошибка\n")
+	
+	for result := range resultChan {
+		status := "OK"
+		if !result.Success {
+			status = "FAIL"
+		}
+		
+		line := fmt.Sprintf("%s;%s;%s;%v;%v\n",
+			result.Time.Format("15:04:05"),
+			result.Host,
+			status,
+			result.Latency,
+			result.Error)
+		
+		_, err := file.WriteString(line)
+		if err != nil {
+			fmt.Printf("Ошибка записи в файл: %v\n", err)
+		}
+	}
+	
+	fmt.Println("Запись в файл завершена.")
+	doneChan <- true
+}
+
+func consolePrinter(resultChan <-chan PingResult) {
+	for result := range resultChan {
+		if result.Success {
+			fmt.Printf("%s | %s | OK | %v\n",
+				result.Time.Format("15:04:05"),
+				result.Host,
+				result.Latency)
+		} else {
+			fmt.Printf("%s | %s | ERROR | %v\n",
+				result.Time.Format("15:04:05"),
+				result.Host,
+				result.Error)
+		}
+	}
+	fmt.Println("Вывод в консоль завершён.")
 }
