@@ -50,7 +50,7 @@ func (p *Player) Hit() int {
 
 func (p *Player) Block() int {
 	var block int
-	fmt.Print("Что защищаешь? 1-крылья(руки), 2-ноги, 3-корпус: ")
+	fmt.Print("Что защищаешь? 1-руки, 2-ноги, 3-корпус: ")
 	fmt.Scan(&block)
 	if block < 1 || block > 3 {
 		block = 1
@@ -258,124 +258,6 @@ func FightPvE(player *Player, enemy *Enemy) bool {
 	}
 }
 
-func FightPvP(players [2]*Player) {
-	fmt.Println("\n════════════════════════════════════════════")
-	fmt.Println("           РЕЖИМ PvP - ГОРЯЧИЙ СТУЛ")
-	fmt.Println("════════════════════════════════════════════")
-	fmt.Println("ПРАВИЛА:")
-	fmt.Println("1. Когда ходит соперник - ОТВЕРНИТЕСЬ!")
-	fmt.Println("2. Вводите выбор, когда подойдёт очередь")
-	fmt.Println("3. Не подсматривайте!")
-	fmt.Println("4. ЧАТ: введите 'чат сообщение' для общения")
-	fmt.Println("════════════════════════════════════════════")
-
-	fmt.Println("\nНажмите Enter чтобы начать...")
-	fmt.Scanln()
-
-	// Канал для сообщений чата
-	chatMessages := make(chan string, 10)
-	stopChat := make(chan bool)
-	
-	// Запускаем горутину для отображения чата
-	go func() {
-		for {
-			select {
-			case msg := <-chatMessages:
-				fmt.Printf("\n[ЧАТ] %s\n", msg)
-				fmt.Print("> ")
-			case <-stopChat:
-				return
-			}
-		}
-	}()
-
-	round := 1
-	for players[0].IsAlive() && players[1].IsAlive() {
-		var choices [2]struct {
-			block int
-			hit   int
-		}
-
-		fmt.Printf("\n=== РАУНД %d ===\n", round)
-		
-		// Ход первого игрока
-		fmt.Printf("\n %s, ваш ход (%s отвернись!)\n", players[0].GetName(), players[1].GetName())
-		fmt.Println("(Введите 'чат сообщение' для отправки в чат)")
-		fmt.Println("Нажмите Enter когда готовы...")
-		
-		// Проверяем, не хочет ли игрок написать в чат
-		var input string
-		fmt.Scanln(&input)
-		
-		if strings.HasPrefix(input, "чат") {
-			msg := strings.TrimSpace(strings.TrimPrefix(input, "чат"))
-			if msg != "" {
-				chatMessages <- fmt.Sprintf("%s: %s", players[0].GetName(), msg)
-			}
-			fmt.Println("Нажмите Enter чтобы продолжить...")
-			fmt.Scanln()
-		}
-
-		choices[0].block = players[0].Block()
-		choices[0].hit = players[0].Hit()
-
-		// Ход второго игрока
-		fmt.Printf("\n %s, ваш ход (%s отвернись!)\n", players[1].GetName(), players[0].GetName())
-		fmt.Println("(Введите 'чат сообщение' для отправки в чат)")
-		fmt.Println("Нажмите Enter когда готовы...")
-		
-		fmt.Scanln(&input)
-		
-		if strings.HasPrefix(input, "чат") {
-			msg := strings.TrimSpace(strings.TrimPrefix(input, "чат"))
-			if msg != "" {
-				chatMessages <- fmt.Sprintf("%s: %s", players[1].GetName(), msg)
-			}
-			fmt.Println("Нажмите Enter чтобы продолжить...")
-			fmt.Scanln()
-		}
-
-		choices[1].block = players[1].Block()
-		choices[1].hit = players[1].Hit()
-
-		fmt.Println("\n=== РЕЗУЛЬТАТЫ РАУНДА ===")
-		fmt.Printf("%s защищает %d, бьёт в %d\n",
-			players[0].GetName(), choices[0].block, choices[0].hit)
-		fmt.Printf("%s защищает %d, бьёт в %d\n",
-			players[1].GetName(), choices[1].block, choices[1].hit)
-
-		if choices[0].hit != choices[1].block {
-			damage := players[0].GetStrength()
-			players[1].TakeDamage(damage)
-			fmt.Printf(" %s попадает! Нанесено %d урона\n", players[0].GetName(), damage)
-		} else {
-			fmt.Printf(" %s блокирует удар!\n", players[1].GetName())
-		}
-
-		if choices[1].hit != choices[0].block {
-			damage := players[1].GetStrength()
-			players[0].TakeDamage(damage)
-			fmt.Printf(" %s попадает! Нанесено %d урона\n", players[1].GetName(), damage)
-		} else {
-			fmt.Printf("  %s блокирует удар!\n", players[0].GetName())
-		}
-
-		fmt.Printf("\n%s: %d/%d HP\n", players[0].GetName(), players[0].GetHP(), players[0].MaxHP)
-		fmt.Printf("%s: %d/%d HP\n", players[1].GetName(), players[1].GetHP(), players[1].MaxHP)
-
-		round++
-	}
-
-	stopChat <- true
-
-	fmt.Println("\n════════════════════════════════════════════")
-	if players[0].IsAlive() {
-		fmt.Printf("ПОБЕДИТЕЛЬ: %s!\n", players[0].GetName())
-	} else {
-		fmt.Printf("ПОБЕДИТЕЛЬ: %s!\n", players[1].GetName())
-	}
-}
-
 func manageBetweenBattles(player *Player) {
 	for {
 		fmt.Println("\n════════════════════════════════════════════")
@@ -542,11 +424,96 @@ func playStoryMode() {
 	fmt.Println("══════════════════════════════════════════════════════════")
 }
 
+func FightPvP(players [2]*Player) {
+	fmt.Println("\n════════════════════════════════════════════")
+	fmt.Println("      ЛОКАЛЬНЫЙ PvP С ЧАТОМ")
+	fmt.Println("════════════════════════════════════════════")
+	fmt.Println("ПРАВИЛА:")
+	fmt.Println("1. Когда ходит соперник - ОТВЕРНИТЕСЬ!")
+	fmt.Println("2. ПОСЛЕ КАЖДОГО ХОДА можно писать в чат")
+	fmt.Println("   Просто введите сообщение и нажмите Enter")
+	fmt.Println("3. Для следующего хода нажмите Enter")
+	fmt.Println("════════════════════════════════════════════")
+
+	round := 1
+	for players[0].IsAlive() && players[1].IsAlive() {
+		var choices [2]struct {
+			block int
+			hit   int
+		}
+
+		fmt.Printf("\n=== РАУНД %d ===\n", round)
+		fmt.Printf("\n%s: %d/%d HP | %s: %d/%d HP\n",
+			players[0].GetName(), players[0].GetHP(), players[0].MaxHP,
+			players[1].GetName(), players[1].GetHP(), players[1].MaxHP)
+
+		fmt.Printf("\n %s, ваш ход (%s отвернись!)\n", players[0].GetName(), players[1].GetName())
+		fmt.Println("Нажмите Enter когда готовы...")
+		fmt.Scanln()
+
+		choices[0].block = players[0].Block()
+		choices[0].hit = players[0].Hit()
+
+		fmt.Printf("\n %s, ваш ход (%s отвернись!)\n", players[1].GetName(), players[0].GetName())
+		fmt.Println("Нажмите Enter когда готовы...")
+		fmt.Scanln()
+
+		choices[1].block = players[1].Block()
+		choices[1].hit = players[1].Hit()
+
+		fmt.Println("\n=== РЕЗУЛЬТАТЫ РАУНДА ===")
+		fmt.Printf("%s защищает %d, бьёт в %d\n",
+			players[0].GetName(), choices[0].block, choices[0].hit)
+		fmt.Printf("%s защищает %d, бьёт в %d\n",
+			players[1].GetName(), choices[1].block, choices[1].hit)
+
+		if choices[0].hit != choices[1].block {
+			damage := players[0].GetStrength()
+			players[1].TakeDamage(damage)
+			fmt.Printf(" %s попадает! Нанесено %d урона\n", players[0].GetName(), damage)
+		} else {
+			fmt.Printf(" %s блокирует удар!\n", players[1].GetName())
+		}
+
+		if choices[1].hit != choices[0].block {
+			damage := players[1].GetStrength()
+			players[0].TakeDamage(damage)
+			fmt.Printf(" %s попадает! Нанесено %d урона\n", players[1].GetName(), damage)
+		} else {
+			fmt.Printf("  %s блокирует удар!\n", players[0].GetName())
+		}
+
+		fmt.Println("\n=== ЧАТ (пишите сообщения) ===")
+		fmt.Println("Введите 'стоп' чтобы закончить чат и продолжить игру")
+
+		for {
+			var msg string
+			fmt.Scanln(&msg)
+			if msg == "стоп" {
+				break
+			}
+			if msg != "" {
+				fmt.Printf("[%s] %s\n", players[0].GetName(), msg)
+				fmt.Printf("[%s] %s\n", players[1].GetName(), msg)
+			}
+		}
+
+		round++
+	}
+
+	fmt.Println("\n════════════════════════════════════════════")
+	if players[0].IsAlive() {
+		fmt.Printf("ПОБЕДИТЕЛЬ: %s!\n", players[0].GetName())
+	} else {
+		fmt.Printf("ПОБЕДИТЕЛЬ: %s!\n", players[1].GetName())
+	}
+}
+
 func playPVPMode() {
 	fmt.Println("\n════════════════════════════════════════════")
 	fmt.Println("           ВЫБЕРИТЕ РЕЖИМ PvP")
 	fmt.Println("════════════════════════════════════════════")
-	fmt.Println("1. PvP локально (на одном компьютере)")
+	fmt.Println("1. PvP локально (на одном компьютере) с чатом")
 	fmt.Println("2. СОЗДАТЬ игру по сети (сервер)")
 	fmt.Println("3. ПРИСОЕДИНИТЬСЯ к игре по сети (клиент)")
 	fmt.Print("Выбор: ")
@@ -581,7 +548,6 @@ func playPVPMode() {
 
 	} else if mode == 2 {
 		StartServer()
-
 	} else if mode == 3 {
 		StartClient()
 	}
@@ -591,7 +557,7 @@ func showMainMenu() int {
 	fmt.Println("\n══════════════════════════════════════════════════════════")
 	fmt.Println("                    ГЛАВНОЕ МЕНЮ")
 	fmt.Println("══════════════════════════════════════════════════════════")
-	fmt.Println("1. Начать сюжетную кампанию")
+	fmt.Println("1. Начать сюжетную игру")
 	fmt.Println("2. Пропустить сюжет и начать игру")
 	fmt.Println("3. Режим PvP")
 	fmt.Println("4. Выйти из игры")
@@ -643,275 +609,249 @@ func main() {
 }
 
 func StartServer() {
-	ln, _ := net.Listen("tcp", ":8080")
+	ln, err := net.Listen("tcp", ":8080")
+	if err != nil {
+		fmt.Println("Ошибка запуска сервера:", err)
+		return
+	}
 	defer ln.Close()
-	fmt.Println("Сервер запущен, ждём клиента...")
-	fmt.Println("Чат доступен! Используйте 'чат сообщение' для общения")
 
-	conn, _ := ln.Accept()
+	fmt.Println("\n════════════════════════════════════════════")
+	fmt.Println("  Сервер запущен. Жду клиента...")
+	fmt.Println("════════════════════════════════════════════")
+	fmt.Println("ПОСЛЕ КАЖДОГО ХОДА будет чат")
+	fmt.Println("В чате пишите сообщения, 'стоп' чтобы продолжить")
+	fmt.Println("════════════════════════════════════════════")
+
+	conn, err := ln.Accept()
+	if err != nil {
+		fmt.Println("Ошибка:", err)
+		return
+	}
 	defer conn.Close()
-	
-	player1 := &Player{Name: "Игрок 1 (хост)", HP: 100, MaxHP: 100, Strength: 10}
-	player2 := &Player{Name: "Игрок 2", HP: 100, MaxHP: 100, Strength: 10}
+
+	fmt.Println("Клиент подключился! Игра началась!")
+	fmt.Println("Ты ходишь ПЕРВЫМ!")
+
+	player1 := &Player{
+		Name:     "Игрок 1",
+		HP:       100,
+		MaxHP:    100,
+		Strength: 10,
+	}
+
+	player2HP := 100
 
 	reader := bufio.NewReader(conn)
 	writer := bufio.NewWriter(conn)
 
-	// Канал для сообщений чата
-	chatMessages := make(chan string, 10)
-	stopChat := make(chan bool)
-	
-	// Запускаем горутину для отображения чата
-	go func() {
-		for {
-			select {
-			case msg := <-chatMessages:
-				fmt.Printf("\n[ЧАТ] %s\n", msg)
-				fmt.Print("> ")
-			case <-stopChat:
-				return
-			}
-		}
-	}()
-	
-	// Запускаем горутину для получения сообщений чата от клиента
-	go func() {
-		for {
-			msg, err := reader.ReadString('\n')
-			if err != nil {
-				break
-			}
-			if strings.HasPrefix(msg, "ЧАТ:") {
-				chatMsg := strings.TrimPrefix(msg, "ЧАТ:")
-				chatMessages <- strings.TrimSpace(chatMsg)
-			}
-		}
-	}()
-
-	var hit2, block2 int
 	round := 1
-
-	for player1.IsAlive() && player2.IsAlive() {
+	for player1.IsAlive() && player2HP > 0 {
 		fmt.Printf("\n=== РАУНД %d ===\n", round)
-		fmt.Println("\n=== ВАШ ХОД (игрок 1) ===")
-		fmt.Println("(Для чата введите: чат сообщение)")
-		
-		// Проверяем, не хочет ли игрок написать в чат
-		var input string
-		fmt.Scanln(&input)
-		
-		if strings.HasPrefix(input, "чат") {
-			msg := strings.TrimSpace(strings.TrimPrefix(input, "чат"))
-			if msg != "" {
-				chatMsg := fmt.Sprintf("%s: %s", player1.Name, msg)
-				chatMessages <- chatMsg
-				writer.WriteString("ЧАТ:" + chatMsg + "\n")
-				writer.Flush()
-			}
-			fmt.Println("Нажмите Enter чтобы продолжить...")
-			fmt.Scanln()
-		}
-		
+		fmt.Printf("Твое HP: %d/100 | HP Игрока 2: %d/100\n", player1.HP, player2HP)
+
+		fmt.Println("\nТВОЙ ХОД:")
 		block1 := player1.Block()
 		hit1 := player1.Hit()
 
-		writer.WriteString(fmt.Sprintf("%d %d\n", hit1, block1))
+		writer.WriteString(fmt.Sprintf("ХОД:%d:%d\n", hit1, block1))
 		writer.Flush()
 
-		data, err := reader.ReadString('\n')
-		if err != nil {
-			fmt.Println("Соединение разорвано")
-			break
+		fmt.Println("Жду ход Игрока 2...")
+
+		var hit2, block2 int
+		for {
+			data, err := reader.ReadString('\n')
+			if err != nil {
+				fmt.Println("Ошибка соединения")
+				return
+			}
+			data = strings.TrimSpace(data)
+			if strings.HasPrefix(data, "ХОД:") {
+				fmt.Sscanf(data, "ХОД:%d:%d", &hit2, &block2)
+				break
+			}
 		}
 
-		// Проверяем, не сообщение ли это чата
-		if strings.HasPrefix(data, "ЧАТ:") {
-			continue
-		}
+		fmt.Println("\n=== РЕЗУЛЬТАТЫ РАУНДА ===")
+		fmt.Printf("Ты бил в %d, защищал %d\n", hit1, block1)
+		fmt.Printf("Игрок 2 бил в %d, защищал %d\n", hit2, block2)
 
-		fmt.Sscanf(data, "%d %d", &hit2, &block2)
-
-		fmt.Println("\n--- РЕЗУЛЬТАТЫ РАУНДА ---")
-		fmt.Printf("%s защищает %d, бьёт в %d\n", player1.Name, block1, hit1)
-		fmt.Printf("%s защищает %d, бьёт в %d\n", player2.Name, block2, hit2)
-
-		damage1 := 0
-		damage2 := 0
-		
 		if hit1 != block2 {
-			damage1 = player1.GetStrength()
-			player2.TakeDamage(damage1)
-			fmt.Printf("%s попадает! Урон: %d\n", player1.Name, damage1)
+			damage := 10
+			player2HP -= damage
+			fmt.Printf("Ты попал! Урон: %d\n", damage)
 		} else {
-			fmt.Printf("%s блокирует удар %s!\n", player2.Name, player1.Name)
+			fmt.Println("Игрок 2 заблокировал твой удар!")
 		}
 
 		if hit2 != block1 {
-			damage2 = player2.GetStrength()
-			player1.TakeDamage(damage2)
-			fmt.Printf("%s попадает! Урон: %d\n", player2.Name, damage2)
+			damage := 10
+			player1.TakeDamage(damage)
+			fmt.Printf("Игрок 2 попал! Ты получил %d урона\n", damage)
 		} else {
-			fmt.Printf("%s блокирует удар %s!\n", player1.Name, player2.Name)
+			fmt.Println("Ты заблокировал удар Игрока 2!")
 		}
 
-		resultMsg := fmt.Sprintf("%d %d %d %d %d %d\n", 
-			player1.HP, player2.HP, hit1, block1, damage1, damage2)
-		writer.WriteString(resultMsg)
-		writer.Flush()
+		fmt.Println("\n=== ЧАТ ===")
+		fmt.Println("Пиши сообщения (или 'стоп' чтобы продолжить):")
 
-		fmt.Printf("\n%s: %d/%d HP\n", player1.Name, player1.HP, player1.MaxHP)
-		fmt.Printf("%s: %d/%d HP\n", player2.Name, player2.HP, player2.MaxHP)
-		
+		for {
+			var msg string
+			fmt.Scanln(&msg)
+
+			if msg == "стоп" {
+				writer.WriteString("ЧАТ:стоп\n")
+				writer.Flush()
+				break
+			}
+
+			if msg != "" {
+				writer.WriteString("ЧАТ:" + msg + "\n")
+				writer.Flush()
+				fmt.Printf("[Ты] %s\n", msg)
+			}
+
+			conn.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
+			chatMsg, err := reader.ReadString('\n')
+			if err == nil {
+				chatMsg = strings.TrimSpace(chatMsg)
+				if strings.HasPrefix(chatMsg, "ЧАТ:") {
+					chatText := strings.TrimPrefix(chatMsg, "ЧАТ:")
+					if chatText != "стоп" {
+						fmt.Printf("[Игрок 2] %s\n", chatText)
+					}
+				}
+			}
+			conn.SetReadDeadline(time.Time{})
+		}
+
 		round++
 	}
 
-	stopChat <- true
-
-	var winner string
 	if player1.IsAlive() {
-		winner = player1.Name
+		fmt.Println("\nТЫ ПОБЕДИЛ!")
 	} else {
-		winner = player2.Name
+		fmt.Println("\nТЫ ПРОИГРАЛ!")
 	}
-	
-	fmt.Println("\n════════════════════════════════════════════")
-	fmt.Printf("ПОБЕДИТЕЛЬ: %s!\n", winner)
-	fmt.Println("════════════════════════════════════════════")
-	
-	writer.WriteString("GAME_OVER " + winner + "\n")
-	writer.Flush()
 }
 
 func StartClient() {
 	conn, err := net.Dial("tcp", "localhost:8080")
 	if err != nil {
 		fmt.Println("Ошибка подключения:", err)
-		fmt.Println("Убедитесь что сервер запущен")
 		return
 	}
 	defer conn.Close()
 
-	player := &Player{Name: "Игрок 2", HP: 100, MaxHP: 100, Strength: 10}
-	enemyName := "Игрок 1 (хост)"
+	fmt.Println("\n════════════════════════════════════════════")
+	fmt.Println("  Подключился к серверу!")
+	fmt.Println("════════════════════════════════════════════")
+	fmt.Println("ПОСЛЕ КАЖДОГО ХОДА будет чат")
+	fmt.Println("В чате пишите сообщения, 'стоп' чтобы продолжить")
+	fmt.Println("════════════════════════════════════════════")
+	fmt.Println("Ты ходишь ВТОРЫМ!")
+
+	player2 := &Player{
+		Name:     "Игрок 2",
+		HP:       100,
+		MaxHP:    100,
+		Strength: 10,
+	}
+
+	player1HP := 100
 
 	reader := bufio.NewReader(conn)
 	writer := bufio.NewWriter(conn)
 
-	// Канал для сообщений чата
-	chatMessages := make(chan string, 10)
-	stopChat := make(chan bool)
-	
-	// Запускаем горутину для отображения чата
-	go func() {
+	round := 1
+	for player2.IsAlive() && player1HP > 0 {
+		fmt.Printf("\n=== РАУНД %d ===\n", round)
+
+		fmt.Println("Жду ход Игрока 1...")
+
+		var hit1, block1 int
 		for {
-			select {
-			case msg := <-chatMessages:
-				fmt.Printf("\n[ЧАТ] %s\n", msg)
-				fmt.Print("> ")
-			case <-stopChat:
+			data, err := reader.ReadString('\n')
+			if err != nil {
+				fmt.Println("Ошибка соединения")
 				return
 			}
-		}
-	}()
-	
-	// Запускаем горутину для получения сообщений чата от сервера
-	go func() {
-		for {
-			msg, err := reader.ReadString('\n')
-			if err != nil {
+			data = strings.TrimSpace(data)
+			if strings.HasPrefix(data, "ХОД:") {
+				fmt.Sscanf(data, "ХОД:%d:%d", &hit1, &block1)
 				break
 			}
-			if strings.HasPrefix(msg, "ЧАТ:") {
-				chatMsg := strings.TrimPrefix(msg, "ЧАТ:")
-				chatMessages <- strings.TrimSpace(chatMsg)
-			}
-		}
-	}()
-
-	fmt.Printf("\nПодключились к серверу! Вы - %s\n", player.Name)
-	fmt.Println("Чат доступен! Используйте 'чат сообщение' для общения")
-	fmt.Println("Ожидаем начала игры...")
-
-	for player.IsAlive() {
-		data, err := reader.ReadString('\n')
-		if err != nil {
-			fmt.Println("Соединение разорвано")
-			break
 		}
 
-		if len(data) >= 9 && data[:9] == "GAME_OVER" {
-			var winner string
-			fmt.Sscanf(data, "GAME_OVER %s", &winner)
-			fmt.Println("\n════════════════════════════════════════════")
-			fmt.Printf("ПОБЕДИТЕЛЬ: %s!\n", winner)
-			fmt.Println("════════════════════════════════════════════")
-			break
-		}
+		fmt.Printf("\nТвое HP: %d/100 | HP Игрока 1: %d/100\n", player2.HP, player1HP)
 
-		// Проверяем, не сообщение ли это чата
-		if strings.HasPrefix(data, "ЧАТ:") {
-			continue
-		}
+		fmt.Println("\nТВОЙ ХОД:")
+		block2 := player2.Block()
+		hit2 := player2.Hit()
 
-		var enemyHit, enemyBlock int
-		fmt.Sscanf(data, "%d %d", &enemyHit, &enemyBlock)
-
-		fmt.Println("\n=== ВАШ ХОД ===")
-		fmt.Println("(Для чата введите: чат сообщение)")
-		
-		// Проверяем, не хочет ли игрок написать в чат
-		var input string
-		fmt.Scanln(&input)
-		
-		if strings.HasPrefix(input, "чат") {
-			msg := strings.TrimSpace(strings.TrimPrefix(input, "чат"))
-			if msg != "" {
-				chatMsg := fmt.Sprintf("%s: %s", player.Name, msg)
-				chatMessages <- chatMsg
-				writer.WriteString("ЧАТ:" + chatMsg + "\n")
-				writer.Flush()
-			}
-			fmt.Println("Нажмите Enter чтобы продолжить...")
-			fmt.Scanln()
-		}
-		
-		block := player.Block()
-		hit := player.Hit()
-
-		writer.WriteString(fmt.Sprintf("%d %d\n", hit, block))
+		writer.WriteString(fmt.Sprintf("ХОД:%d:%d\n", hit2, block2))
 		writer.Flush()
 
-		resultData, err := reader.ReadString('\n')
-		if err != nil {
-			fmt.Println("Соединение разорвано")
-			break
-		}
+		fmt.Println("\n=== РЕЗУЛЬТАТЫ РАУНДА ===")
+		fmt.Printf("Игрок 1 бил в %d, защищал %d\n", hit1, block1)
+		fmt.Printf("Ты бил в %d, защищал %d\n", hit2, block2)
 
-		var playerHP, enemyHP, enemyHit2, enemyBlock2, damageToEnemy, damageToPlayer int
-		fmt.Sscanf(resultData, "%d %d %d %d %d %d", 
-			&playerHP, &enemyHP, &enemyHit2, &enemyBlock2, &damageToEnemy, &damageToPlayer)
-
-		player.HP = playerHP
-
-		fmt.Println("\n--- РЕЗУЛЬТАТЫ РАУНДА ---")
-		fmt.Printf("%s защищает %d, бьёт в %d\n", enemyName, enemyBlock, enemyHit)
-		fmt.Printf("%s защищает %d, бьёт в %d\n", player.Name, block, hit)
-
-		if damageToEnemy > 0 {
-			fmt.Printf("%s попадает! Урон: %d\n", player.Name, damageToEnemy)
+		if hit1 != block2 {
+			damage := 10
+			player2.TakeDamage(damage)
+			fmt.Printf("Игрок 1 попал! Ты получил %d урона\n", damage)
 		} else {
-			fmt.Printf("%s блокирует удар %s!\n", enemyName, player.Name)
+			fmt.Println("Ты заблокировал удар Игрока 1!")
 		}
 
-		if damageToPlayer > 0 {
-			fmt.Printf("%s попадает! Урон: %d\n", enemyName, damageToPlayer)
+		if hit2 != block1 {
+			damage := 10
+			player1HP -= damage
+			fmt.Printf("Ты попал! Урон: %d\n", damage)
 		} else {
-			fmt.Printf("%s блокирует удар %s!\n", player.Name, enemyName)
+			fmt.Println("Игрок 1 заблокировал твой удар!")
 		}
 
-		fmt.Printf("\n%s: %d/%d HP\n", player.Name, player.HP, player.MaxHP)
-		fmt.Printf("%s: %d HP\n", enemyName, enemyHP)
+		fmt.Println("\n=== ЧАТ ===")
+		fmt.Println("Пиши сообщения (или 'стоп' чтобы продолжить):")
+
+		for {
+			var msg string
+			fmt.Scanln(&msg)
+
+			if msg == "стоп" {
+				writer.WriteString("ЧАТ:стоп\n")
+				writer.Flush()
+				break
+			}
+
+			if msg != "" {
+				writer.WriteString("ЧАТ:" + msg + "\n")
+				writer.Flush()
+				fmt.Printf("[Ты] %s\n", msg)
+			}
+
+			conn.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
+			chatMsg, err := reader.ReadString('\n')
+			if err == nil {
+				chatMsg = strings.TrimSpace(chatMsg)
+				if strings.HasPrefix(chatMsg, "ЧАТ:") {
+					chatText := strings.TrimPrefix(chatMsg, "ЧАТ:")
+					if chatText != "стоп" {
+						fmt.Printf("[Игрок 1] %s\n", chatText)
+					}
+				}
+			}
+			conn.SetReadDeadline(time.Time{})
+		}
+
+		round++
 	}
 
-	stopChat <- true
+	if player2.IsAlive() {
+		fmt.Println("\nТЫ ПОБЕДИЛ!")
+	} else {
+		fmt.Println("\nТЫ ПРОИГРАЛ!")
+	}
 }
