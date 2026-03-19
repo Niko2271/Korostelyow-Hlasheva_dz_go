@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/rand"
 	"net"
+	"strings"
 	"time"
 )
 
@@ -265,10 +266,28 @@ func FightPvP(players [2]*Player) {
 	fmt.Println("1. Когда ходит соперник - ОТВЕРНИТЕСЬ!")
 	fmt.Println("2. Вводите выбор, когда подойдёт очередь")
 	fmt.Println("3. Не подсматривайте!")
+	fmt.Println("4. ЧАТ: введите 'чат сообщение' для общения")
 	fmt.Println("════════════════════════════════════════════")
 
 	fmt.Println("\nНажмите Enter чтобы начать...")
 	fmt.Scanln()
+
+	// Канал для сообщений чата
+	chatMessages := make(chan string, 10)
+	stopChat := make(chan bool)
+	
+	// Запускаем горутину для отображения чата
+	go func() {
+		for {
+			select {
+			case msg := <-chatMessages:
+				fmt.Printf("\n[ЧАТ] %s\n", msg)
+				fmt.Print("> ")
+			case <-stopChat:
+				return
+			}
+		}
+	}()
 
 	round := 1
 	for players[0].IsAlive() && players[1].IsAlive() {
@@ -278,16 +297,43 @@ func FightPvP(players [2]*Player) {
 		}
 
 		fmt.Printf("\n=== РАУНД %d ===\n", round)
+		
+		// Ход первого игрока
 		fmt.Printf("\n %s, ваш ход (%s отвернись!)\n", players[0].GetName(), players[1].GetName())
+		fmt.Println("(Введите 'чат сообщение' для отправки в чат)")
 		fmt.Println("Нажмите Enter когда готовы...")
-		fmt.Scanln()
+		
+		// Проверяем, не хочет ли игрок написать в чат
+		var input string
+		fmt.Scanln(&input)
+		
+		if strings.HasPrefix(input, "чат") {
+			msg := strings.TrimSpace(strings.TrimPrefix(input, "чат"))
+			if msg != "" {
+				chatMessages <- fmt.Sprintf("%s: %s", players[0].GetName(), msg)
+			}
+			fmt.Println("Нажмите Enter чтобы продолжить...")
+			fmt.Scanln()
+		}
 
 		choices[0].block = players[0].Block()
 		choices[0].hit = players[0].Hit()
 
+		// Ход второго игрока
 		fmt.Printf("\n %s, ваш ход (%s отвернись!)\n", players[1].GetName(), players[0].GetName())
+		fmt.Println("(Введите 'чат сообщение' для отправки в чат)")
 		fmt.Println("Нажмите Enter когда готовы...")
-		fmt.Scanln()
+		
+		fmt.Scanln(&input)
+		
+		if strings.HasPrefix(input, "чат") {
+			msg := strings.TrimSpace(strings.TrimPrefix(input, "чат"))
+			if msg != "" {
+				chatMessages <- fmt.Sprintf("%s: %s", players[1].GetName(), msg)
+			}
+			fmt.Println("Нажмите Enter чтобы продолжить...")
+			fmt.Scanln()
+		}
 
 		choices[1].block = players[1].Block()
 		choices[1].hit = players[1].Hit()
@@ -319,6 +365,8 @@ func FightPvP(players [2]*Player) {
 
 		round++
 	}
+
+	stopChat <- true
 
 	fmt.Println("\n════════════════════════════════════════════")
 	if players[0].IsAlive() {
@@ -598,6 +646,7 @@ func StartServer() {
 	ln, _ := net.Listen("tcp", ":8080")
 	defer ln.Close()
 	fmt.Println("Сервер запущен, ждём клиента...")
+	fmt.Println("Чат доступен! Используйте 'чат сообщение' для общения")
 
 	conn, _ := ln.Accept()
 	defer conn.Close()
@@ -608,12 +657,60 @@ func StartServer() {
 	reader := bufio.NewReader(conn)
 	writer := bufio.NewWriter(conn)
 
+	// Канал для сообщений чата
+	chatMessages := make(chan string, 10)
+	stopChat := make(chan bool)
+	
+	// Запускаем горутину для отображения чата
+	go func() {
+		for {
+			select {
+			case msg := <-chatMessages:
+				fmt.Printf("\n[ЧАТ] %s\n", msg)
+				fmt.Print("> ")
+			case <-stopChat:
+				return
+			}
+		}
+	}()
+	
+	// Запускаем горутину для получения сообщений чата от клиента
+	go func() {
+		for {
+			msg, err := reader.ReadString('\n')
+			if err != nil {
+				break
+			}
+			if strings.HasPrefix(msg, "ЧАТ:") {
+				chatMsg := strings.TrimPrefix(msg, "ЧАТ:")
+				chatMessages <- strings.TrimSpace(chatMsg)
+			}
+		}
+	}()
+
 	var hit2, block2 int
 	round := 1
 
 	for player1.IsAlive() && player2.IsAlive() {
 		fmt.Printf("\n=== РАУНД %d ===\n", round)
 		fmt.Println("\n=== ВАШ ХОД (игрок 1) ===")
+		fmt.Println("(Для чата введите: чат сообщение)")
+		
+		// Проверяем, не хочет ли игрок написать в чат
+		var input string
+		fmt.Scanln(&input)
+		
+		if strings.HasPrefix(input, "чат") {
+			msg := strings.TrimSpace(strings.TrimPrefix(input, "чат"))
+			if msg != "" {
+				chatMsg := fmt.Sprintf("%s: %s", player1.Name, msg)
+				chatMessages <- chatMsg
+				writer.WriteString("ЧАТ:" + chatMsg + "\n")
+				writer.Flush()
+			}
+			fmt.Println("Нажмите Enter чтобы продолжить...")
+			fmt.Scanln()
+		}
 		
 		block1 := player1.Block()
 		hit1 := player1.Hit()
@@ -625,6 +722,11 @@ func StartServer() {
 		if err != nil {
 			fmt.Println("Соединение разорвано")
 			break
+		}
+
+		// Проверяем, не сообщение ли это чата
+		if strings.HasPrefix(data, "ЧАТ:") {
+			continue
 		}
 
 		fmt.Sscanf(data, "%d %d", &hit2, &block2)
@@ -663,6 +765,8 @@ func StartServer() {
 		round++
 	}
 
+	stopChat <- true
+
 	var winner string
 	if player1.IsAlive() {
 		winner = player1.Name
@@ -693,7 +797,39 @@ func StartClient() {
 	reader := bufio.NewReader(conn)
 	writer := bufio.NewWriter(conn)
 
+	// Канал для сообщений чата
+	chatMessages := make(chan string, 10)
+	stopChat := make(chan bool)
+	
+	// Запускаем горутину для отображения чата
+	go func() {
+		for {
+			select {
+			case msg := <-chatMessages:
+				fmt.Printf("\n[ЧАТ] %s\n", msg)
+				fmt.Print("> ")
+			case <-stopChat:
+				return
+			}
+		}
+	}()
+	
+	// Запускаем горутину для получения сообщений чата от сервера
+	go func() {
+		for {
+			msg, err := reader.ReadString('\n')
+			if err != nil {
+				break
+			}
+			if strings.HasPrefix(msg, "ЧАТ:") {
+				chatMsg := strings.TrimPrefix(msg, "ЧАТ:")
+				chatMessages <- strings.TrimSpace(chatMsg)
+			}
+		}
+	}()
+
 	fmt.Printf("\nПодключились к серверу! Вы - %s\n", player.Name)
+	fmt.Println("Чат доступен! Используйте 'чат сообщение' для общения")
 	fmt.Println("Ожидаем начала игры...")
 
 	for player.IsAlive() {
@@ -712,10 +848,32 @@ func StartClient() {
 			break
 		}
 
+		// Проверяем, не сообщение ли это чата
+		if strings.HasPrefix(data, "ЧАТ:") {
+			continue
+		}
+
 		var enemyHit, enemyBlock int
 		fmt.Sscanf(data, "%d %d", &enemyHit, &enemyBlock)
 
 		fmt.Println("\n=== ВАШ ХОД ===")
+		fmt.Println("(Для чата введите: чат сообщение)")
+		
+		// Проверяем, не хочет ли игрок написать в чат
+		var input string
+		fmt.Scanln(&input)
+		
+		if strings.HasPrefix(input, "чат") {
+			msg := strings.TrimSpace(strings.TrimPrefix(input, "чат"))
+			if msg != "" {
+				chatMsg := fmt.Sprintf("%s: %s", player.Name, msg)
+				chatMessages <- chatMsg
+				writer.WriteString("ЧАТ:" + chatMsg + "\n")
+				writer.Flush()
+			}
+			fmt.Println("Нажмите Enter чтобы продолжить...")
+			fmt.Scanln()
+		}
 		
 		block := player.Block()
 		hit := player.Hit()
@@ -754,4 +912,6 @@ func StartClient() {
 		fmt.Printf("\n%s: %d/%d HP\n", player.Name, player.HP, player.MaxHP)
 		fmt.Printf("%s: %d HP\n", enemyName, enemyHP)
 	}
+
+	stopChat <- true
 }
